@@ -1,0 +1,28 @@
+[
+  {
+    "id": "upstream-01",
+    "title": "Agricultural fields",
+    "category": "fields",
+    "note": "Patchwork of fields and tree cover; the output recovers broad vegetation hue but not field boundaries.",
+    "files": {
+      "sar": "upstream-01_sar.png",
+      "generated": "upstream-01_generated.png",
+      "reference": "upstream-01_reference.png"
+    },
+    "provenance": "Cropped from assets/results/output.png (original author's validation figure, MIT). The generated panel was produced by the original author's checkpoint, which is not published; it is a precomputed result, not live inference.",
+    "resolution_note": "Panels were resized by matplotlib when the figure was made and re-sampled to 256x256 here, so pixel-level metrics on them would be unreliable."
+  },
+  {
+    "id": "upstream-02",
+    "title": "Mountain terrain",
+    "category": "terrain",
+    "note": "Steep ridges with strong radar layover; the output follows relief shading but loses snow and road detail.",
+    "files": {
+      "sar": "upstream-02_sar.png",
+      "generated": "upstream-02_generated.png",
+      "reference": "upstream-02_reference.png"
+    },
+    "provenance": "Cropped from assets/results/output.png (original author's validation figure, MIT). The generated panel was produced by the original author's checkpoint, which is not published; it is a precomputed result, not live inference.",
+    "resolution_note": "Panels were resized by matplotlib when the figure was made and re-sampled to 256x256 here, so pixel-level metrics on them would be unreliable."
+  }
+]

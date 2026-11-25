@@ -51,7 +51,7 @@ RATE_LIMIT = int(os.getenv("SAR_RATE_LIMIT_PER_MIN", "20"))
 CONCURRENCY = int(os.getenv("SAR_CONCURRENCY", "1"))
 CORS_ORIGINS = [o for o in os.getenv("SAR_CORS_ORIGINS", "").split(",") if o]
 TRUST_PROXY = os.getenv("SAR_TRUST_PROXY", "0") == "1"  # only behind a proxy that sets X-Forwarded-For
-SAMPLES_DIR = ROOT / "samples"
+SAMPLES_DIR = ROOT / "assets" / "demo"
 EVAL_FILE = ROOT / "evaluation" / "evaluation.json"
 FRONTEND_DIR = ROOT / "frontend" / "dist"
 
