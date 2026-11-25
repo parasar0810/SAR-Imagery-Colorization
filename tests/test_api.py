@@ -113,3 +113,11 @@ def test_evaluation_is_honest_when_not_run(client):
 def test_security_headers(client):
     r = client.get("/api/health")
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
+
+
+def test_preprocess_works_without_model(client):
+    r = client.post("/api/preprocess", files={"file": ("a.png", png_bytes(size=(640, 480)), "image/png")})
+    assert r.status_code == 200
+    j = r.json()
+    img = Image.open(io.BytesIO(base64.b64decode(j["preprocessed"].split(",", 1)[1])))
+    assert img.size == (256, 256) and img.mode == "L" and j["input"]["width"] == 640

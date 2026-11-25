@@ -1,58 +1,160 @@
-# SAR Image Colorization — Attention GAN
+# SAR Imagery Colorization — Attention GAN inference workbench
 
-Translating grayscale Synthetic Aperture Radar (SAR) imagery into realistic optical (RGB) imagery using a conditional GAN with attention.
+Translate grayscale **Synthetic Aperture Radar (SAR)** tiles into **optical-style RGB** with a conditional GAN, served through a FastAPI inference service and an interactive web workbench.
 
-![results](assets/results/output.png)
+> **Attribution.** The model, its training notebook and the result images are the work of **Fahad Ur Rehman** —
+> [fahad-mughal-rehman/sar-colorization-gan](https://github.com/fahad-mughal-rehman/sar-colorization-gan) (MIT), imported here with its full commit history.
+> This repository adds the inference package, API, web application, tests and documentation (Priyanshu Parasar). See [ATTRIBUTION.md](ATTRIBUTION.md).
 
-## Overview
+![Colorization lab](docs/screenshots/lab.png)
 
-SAR sensors image the ground regardless of cloud cover or daylight, but the resulting grayscale imagery is hard to interpret visually. This project trains a conditional GAN to translate SAR imagery into optical-style RGB imagery, so the output is easier to read while keeping the availability advantages of radar.
+| | |
+|---|---|
+| **Status** | Inference stack complete and tested. **No trained checkpoint is published yet** — live colorization is disabled until one is installed (see [Model weights](#model-weights)). |
+| **Live demo** | Not deployed yet. |
+| **Stack** | Python 3.12 · PyTorch · FastAPI · React 19 + TypeScript + Tailwind · Docker |
 
-**Architecture**
-- **Generator:** U-Net with a self-attention block at the 16×16 bottleneck (SAGAN-style) and attention gates on every skip connection (Attention U-Net style, Oktay et al.)
-- **Discriminator:** Multi-scale PatchGAN — three discriminators at full, half, and quarter resolution (Pix2PixHD style)
-- **Losses:** LSGAN adversarial + feature matching + L1 + VGG19 perceptual + differentiable SSIM
+## What the model does — and doesn’t
 
-**Training details**
-- 256×256 paired SAR/optical images, deterministic train/val split (fixed seed) for reproducible evaluation
-- Mixed-precision (AMP) training with automatic checkpoint resume, built for Kaggle's session time limits
-- Evaluated with PSNR and SSIM on a held-out test split
+SAR satellites measure microwave **backscatter**. They see through cloud and work at night, but the images are grainy, colourless and hard to read. This model learns, from ~16k paired SAR/optical tiles, to predict what an optical camera *might* have seen.
 
-## Dataset
+The output is a **learned estimate, not measured colour**. It is useful for visual interpretation, and unsuitable for anything colour-dependent: land-cover classification, vegetation indices, change detection or damage assessment.
 
-[Paired SAR-Optical Dataset (16K Images)](https://www.kaggle.com/datasets/anjaliikakde/paired-sar-optical-dataset-16k-images) on Kaggle. Each image is a single PNG with the SAR tile on the left half and the paired optical tile on the right half.
+## Architecture
 
-## Repository structure
-## Getting started
+From [`src/sar_colorization/models.py`](src/sar_colorization/models.py), copied verbatim from the original notebook, so checkpoints trained there load directly.
 
-1. Open `notebooks/sar_colorization_attention_gan.ipynb` on a GPU environment (developed for Kaggle P100/T4; a local CUDA GPU works too).
-2. Download the dataset above and point `CFG["DATA_DIR"]` at it.
-3. Run the notebook top to bottom. Training checkpoints and sample grids are written to `checkpoints/` and `samples/`; re-running the notebook resumes automatically from the last checkpoint.
-4. The evaluation section at the bottom loads a checkpoint and reports PSNR/SSIM on the held-out split, plus saves comparison grids (SAR | Generated | Ground Truth) to `test_results/`.
-
-### Local setup
-
-```bash
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-jupyter notebook notebooks/sar_colorization_attention_gan.ipynb
+```mermaid
+flowchart LR
+  A[SAR tile<br/>any size] --> B[Preprocess<br/>RGB → bicubic 256² → x−0.5 /0.5 → channel mean]
+  B --> C[Encoder<br/>7 × Conv4×4 s2, 1→512 ch, 256²→2²]
+  C -- 16×16 --> SA[Self-attention<br/>SAGAN]
+  C --> D[Decoder<br/>6 × ConvT + skips]
+  C -. attention-gated skips ×4 .-> D
+  D --> E[ConvT + tanh<br/>3×256²]
+  E --> F[Optical-style RGB<br/>model prediction]
 ```
+
+| Part | Detail |
+|---|---|
+| Generator | Attention U-Net: self-attention at the 16×16 bottleneck, attention gates (Oktay et al.) on the four highest-resolution skips, InstanceNorm, dropout 0.5 in the first three up-blocks. **42,497,640 parameters.** |
+| Discriminator (training only) | Three PatchGANs at 256², 128², 64² (Pix2PixHD style); 8,297,283 parameters. |
+| Objective | LSGAN (λ 1) + feature matching (10) + L1 (50) + VGG19 perceptual (10) + SSIM (10). Adam 2e-4, 60 epochs, LR decay over the second half, AMP. |
+
+## The workbench
+
+| Overview | Architecture | Results |
+|---|---|---|
+| ![](docs/screenshots/overview.png) | ![](docs/screenshots/architecture.png) | ![](docs/screenshots/results.png) |
+
+- **Colorization lab**: drag-and-drop or sample input. Live preprocessing preview of the exact 1×256×256 tensor the model sees, inference, a before/after slider (keyboard-accessible), a side-by-side view, fullscreen zoom and PNG download.
+- **Architecture**: diagram generated from the real layer definitions.
+- **Results**: shows only metrics measured in this repository; upstream numbers are labelled as upstream.
+- **Gallery**: the original author’s validation samples, labelled *precomputed*.
+- **API**: endpoints, limits read from the running server, error codes.
+
+Precomputed results are always badged as precomputed and are never presented as live inference.
 
 ## Results
 
-| Metric | Value |
+| Source | PSNR | SSIM | Test images |
+|---|---|---|---|
+| **Original author’s README** (not reproduced here) | 17.669 ± 2.929 dB | 0.3393 ± 0.1155 | 319 (2% seeded hold-out) |
+| **This repository** | not yet measured | not yet measured | needs a checkpoint and the dataset |
+
+Run [`scripts/evaluate.py`](scripts/evaluate.py) with a checkpoint to produce `evaluation/evaluation.json`. The web app then shows those numbers as measured.
+
+**Methodology caveats** (details in [docs/MODEL_CARD.md](docs/MODEL_CARD.md)):
+- the split is a seeded shuffle of *tiles*, not scenes, so neighbouring tiles from one scene may appear in both train and test;
+- PSNR/SSIM require a pixel-aligned optical reference and are meaningless for arbitrary uploads.
+
+### Measured inference cost (this repository)
+Generator forward pass, one 256×256 tile, CPU only, on a 12-thread Intel laptop (PyTorch 2.15 CPU):
+- **≈139 ms** median warm (≈194 ms on the first call), with about **550 MB** resident memory;
+- **329 ms** server-side through the API, about 0.9 s round trip in the browser.
+
+Measured with untrained weights; latency does not depend on the weight values.
+
+## Model weights
+
+No checkpoint is committed or published yet: the original author did not release one, and this machine has no GPU to train one.
+
+To produce one:
+
+```bash
+# Kaggle GPU notebook (P100/T4), dataset attached; resumes automatically across sessions
+python scripts/train.py --data-dir /kaggle/input/<dataset>/Paired_SAR_Optical_images --out /kaggle/working --epochs 60
+python scripts/export_generator.py /kaggle/working/checkpoints/last.pt weights/generator.pt --fp16   # ≈85 MB
+python scripts/evaluate.py --data-dir <same> --weights weights/generator.pt --out evaluation
+```
+
+Checkpoints are loaded with `torch.load(weights_only=True)`, so a malicious pickle cannot execute code. In Docker, set `SAR_WEIGHTS_URL` and `SAR_WEIGHTS_SHA256` and the weights are downloaded and checksum-verified at start.
+
+## Run locally
+
+```bash
+python -m venv .venv && . .venv/Scripts/activate      # macOS/Linux: source .venv/bin/activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-serve.txt pytest httpx ruff
+(cd frontend && npm ci && npm run build)
+uvicorn api.main:app --port 8000        # http://localhost:8000 — API docs at /api/docs
+```
+
+Or with Docker: `docker build -t sar-colorization . && docker run -p 7860:7860 -v $PWD/weights:/app/weights sar-colorization`.
+
+## API
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/health` | Liveness + `model_ready` |
+| GET | `/api/model` | Architecture, I/O contract, checkpoint metadata, limits |
+| POST | `/api/colorize` | multipart `file` → base64 PNG prediction, preprocessed input, latency |
+| POST | `/api/preprocess` | multipart `file` → the exact model input (works without weights) |
+| GET | `/api/samples`, `/api/samples/{id}/{sar\|generated\|reference}` | Bundled samples with provenance |
+| GET | `/api/evaluation` | Measured metrics, or an explicit “not run” |
+
+Errors use one shape, `{"error": {"code", "message"}}`: 400 invalid image, 413 too large, 415 unsupported format, 429 rate limited, 503 model unavailable, 504 timeout.
+
+**Safety limits** (environment-configurable):
+- 8 MB uploads, 16.7 MP maximum, PNG/JPEG/TIFF/WEBP/BMP only;
+- the header is checked before full decode (decompression-bomb guard);
+- 20 requests per minute per client, one inference at a time, 30 s timeout;
+- in-memory processing with no temp files, no server paths in responses, and security headers on every response.
+
+## Tests
+
+```bash
+pytest -q        # 44 tests
+```
+
+| Suite | What it proves |
 |---|---|
-| PSNR | 17.669 ± 2.929 dB |
-| SSIM | 0.3393 ± 0.1155 |
-| Test set size | 319 images |
+| `test_preprocessing.py` | Inference preprocessing equals the notebook’s torchvision transforms (≤ 1e-6); decoding limits and error cases |
+| `test_model.py` | Shapes, tanh range, verbatim parameter count, both checkpoint formats, fp16 export, **refusal of pickled code** |
+| `test_api.py` | Every endpoint and error code, rate limiting, spoofed `X-Forwarded-For` ignored, sample path-traversal blocked |
 
-## License
+Model tests use **random weights**: they verify structure and plumbing, **not output quality**. There is no real-checkpoint test until a checkpoint exists. CI (GitHub Actions) runs lint, tests and the frontend build on CPU only.
 
-MIT — see [LICENSE](LICENSE).
+## Repository layout
 
-## Acknowledgments
+```
+notebooks/            original training + evaluation notebook (upstream)
+scripts/              train.py, evaluate.py, export_generator.py, fetch_weights.py, crop_results.py (upstream)
+src/sar_colorization/ models / losses / data (verbatim from notebook), preprocessing, inference, metrics
+api/                  FastAPI service
+frontend/             React + TypeScript workbench
+assets/               upstream result figure; demo samples cropped from it
+tests/                pytest suite
+docs/                 model card, dataset notes, deployment, screenshots
+```
 
-- Attention U-Net: Oktay et al., *Attention U-Net: Learning Where to Look for the Pancreas*
-- Multi-scale PatchGAN + feature matching: Wang et al., *High-Resolution Image Synthesis and Semantic Manipulation with Conditional GANs* (Pix2PixHD)
-- Self-attention block: Zhang et al., *Self-Attention Generative Adversarial Networks* (SAGAN)
+## Limitations
+
+- No published checkpoint, so no live colorization yet and no metrics reproduced here.
+- Fixed 256×256 input. Larger images are downsampled, losing detail; tiling is future work.
+- Trained and reported on one dataset. Generalisation to other sensors, polarisations or regions is untested.
+- The sample gallery has only two scenes, the upstream author’s; they were resized by matplotlib, so they are unsuitable for pixel metrics.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). The dataset is not redistributed and remains under its own terms ([docs/DATASET.md](docs/DATASET.md)).

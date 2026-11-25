@@ -162,6 +162,21 @@ async def colorize(request: Request, file: Annotated[UploadFile, File()]):
     }
 
 
+@app.post("/api/preprocess")
+async def preprocess(request: Request, file: Annotated[UploadFile, File()]):
+    """Return the exact grayscale tensor the generator would receive. Works without weights."""
+    check_rate(request)
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, {"code": "too_large", "message": f"File exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."})
+    try:
+        img = decode_image(data, max_pixels=MAX_PIXELS)
+    except InvalidImageError as exc:
+        raise HTTPException(415 if "Unsupported" in str(exc) else 400, {"code": "invalid_image", "message": str(exc)}) from None
+    return {"preprocessed": png_data_url(preprocessed_preview(img)), "model_input_size": IMG_SIZE,
+            "input": {"width": img.size[0], "height": img.size[1], "format": img.format, "mode": img.mode}}
+
+
 def load_manifest() -> list[dict]:
     path = SAMPLES_DIR / "manifest.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
