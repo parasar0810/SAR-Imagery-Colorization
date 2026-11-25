@@ -17,3 +17,10 @@ test_results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local environment / build output
+.venv/
+weights/
+evaluation/*.png
+frontend/node_modules/
+frontend/dist/
