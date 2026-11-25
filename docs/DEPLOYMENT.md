@@ -5,9 +5,9 @@ The service is one container: FastAPI serves both the API (`/api/*`) and the bui
 ## Resource needs (measured / estimated)
 | | |
 |---|---|
-| CPU | 1–2 vCPU. Measured on a 12-thread laptop: ≈139 ms median per 256² tile warm, ≈194 ms first call; expect slower on shared vCPUs |
-| RAM | ≈550 MB resident after loading the model (measured, Windows, PyTorch 2.15 CPU); allow 1 GB for headroom |
-| Disk | Image ≈ 1 GB (CPU torch) + ≈85–170 MB weights |
+| CPU | 1–2 vCPU. Measured per 256² tile: ≈139 ms median warm natively; 146–297 ms inside the container (Docker Desktop VM). Expect slower on shared vCPUs |
+| RAM | ≈400 MiB for the running container with the model loaded (measured via `docker stats`); ≈550 MB natively on Windows. Allow 1 GB for headroom |
+| Disk | Image 1.61 GB (measured; CPU-only torch) + ≈85–170 MB weights |
 | GPU | Not needed |
 | Concurrency | 1 inference at a time per process by design (`SAR_CONCURRENCY`) |
 
@@ -31,6 +31,9 @@ The service is one container: FastAPI serves both the API (`/api/*`) and the bui
 | Render / Railway / Fly.io | Possible | Paid tiers needed for ≥1 GB RAM on most; verify pricing first. |
 
 No paid resource is created without the owner’s approval.
+
+## Verified locally (2026-11-25)
+`docker build` succeeds; the container reports healthy, serves the UI, `/api/preprocess` works, `/api/colorize` returns 503 without weights and 200 with a mounted checkpoint (tested with random weights), and the process runs as non-root user `app`.
 
 ## Steps (any Docker host)
 ```bash
